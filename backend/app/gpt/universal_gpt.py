@@ -4,8 +4,12 @@ from app.models.gpt_model import GPTSource
 from app.gpt.prompt import BASE_PROMPT, AI_SUM, SCREENSHOT, LINK
 from app.gpt.utils import fix_markdown
 from app.models.transcriber_model import TranscriptSegment
+from app.utils.logger import get_logger
 from datetime import timedelta
 from typing import List
+
+
+logger = get_logger(__name__)
 
 
 class UniversalGPT(GPT):
@@ -80,6 +84,26 @@ class UniversalGPT(GPT):
         response = self.client.chat.completions.create(
             model=self.model,
             messages=messages,
-            temperature=0.7
+            temperature=self.temperature
         )
-        return response.choices[0].message.content.strip()
+
+        choices = getattr(response, "choices", None)
+        if not choices:
+            dumped = None
+            try:
+                dumped = response.model_dump()  # type: ignore[attr-defined]
+            except Exception:
+                try:
+                    dumped = dict(response)  # type: ignore[arg-type]
+                except Exception:
+                    dumped = str(response)
+            logger.error(f"ChatCompletion returned no choices. model={self.model}, response={dumped}")
+            raise RuntimeError("GPT 返回结果为空（choices 为空）。请检查模型名称/Key/供应商返回值是否为错误。")
+
+        msg = getattr(choices[0], "message", None)
+        content = getattr(msg, "content", None) if msg is not None else None
+        if not content:
+            logger.error(f"ChatCompletion returned empty content. model={self.model}, choice0={choices[0]}")
+            raise RuntimeError("GPT 返回内容为空（message.content 为空）。")
+
+        return content.strip()

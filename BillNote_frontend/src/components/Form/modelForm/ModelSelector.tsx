@@ -20,6 +20,7 @@ export function ModelSelector({ providerId, onSaved }: ModelSelectorProps) {
   const { models, loading, selectedModel, loadModels, setSelectedModel, addNewModel, clearModels } =
     useModelStore()
   const [search, setSearch] = useState('')
+  const [manualModel, setManualModel] = useState('')
   const [submitting, setSubmitting] = useState(false)
 
   const filteredModels = models.filter(model => {
@@ -31,6 +32,7 @@ export function ModelSelector({ providerId, onSaved }: ModelSelectorProps) {
   useEffect(() => {
     clearModels()
     setSelectedModel('')
+    setManualModel('')
   }, [providerId, clearModels, setSelectedModel])
 
   const handleSubmit = async () => {
@@ -84,6 +86,29 @@ export function ModelSelector({ providerId, onSaved }: ModelSelectorProps) {
           ))}
         </SelectContent>
       </Select>
+
+      <div className="flex flex-col gap-2">
+        <Input
+          placeholder="也可手动输入模型名（例如 TBStars2-200B-A13B）"
+          value={manualModel}
+          onChange={e => setManualModel(e.target.value)}
+        />
+        <Button
+          type="button"
+          variant="outline"
+          onClick={() => {
+            const v = manualModel.trim()
+            if (!v) {
+              toast.error('请输入模型名')
+              return
+            }
+            setSelectedModel(v)
+          }}
+          disabled={!manualModel.trim()}
+        >
+          使用该模型
+        </Button>
+      </div>
 
       <Button onClick={handleSubmit} disabled={submitting || !selectedModel}>
         {submitting ? '保存中...' : '保存模型'}

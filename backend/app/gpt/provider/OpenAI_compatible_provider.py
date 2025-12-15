@@ -15,17 +15,25 @@ class OpenAICompatibleProvider:
         return self.client
 
     @staticmethod
-    def test_connection(api_key: str, base_url: str) -> bool:
+    def test_connection(api_key: str, base_url: str, model_name: str | None = None) -> bool:
         try:
             client = OpenAI(api_key=api_key, base_url=base_url)
-            model = client.models.list()
-            # for segment in model:
-            #     print(segment)
-            # print(model)
+            client.models.list()
             logging.info("连通性测试成功")
             return True
         except Exception as e:
             logging.info(f"连通性测试失败：{e}")
-
-            # print(f"Error connecting to OpenAI API: {e}")
-            return False
+            try:
+                if not model_name:
+                    raise RuntimeError(f"Provider does not support /models; please add a model name and retry. Original error: {e}")
+                client = OpenAI(api_key=api_key, base_url=base_url)
+                client.chat.completions.create(
+                    model=model_name,
+                    messages=[{"role": "user", "content": "ping"}],
+                    max_tokens=1,
+                )
+                logging.info("连通性测试成功")
+                return True
+            except Exception as e2:
+                logging.info(f"连通性测试失败：{e2}")
+                return False
