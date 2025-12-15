@@ -26,7 +26,7 @@ export const useTaskPolling = (interval = 3000) => {
         try {
           console.log('🔄 正在轮询任务：', task.id)
           const res = await get_task_status(task.id)
-          const { status } = res
+          const { status, message } = res
 
           if (status && status !== task.status) {
             if (status === 'SUCCESS') {
@@ -40,6 +40,7 @@ export const useTaskPolling = (interval = 3000) => {
               })
             } else if (status === 'FAILED') {
               updateTaskContent(task.id, { status })
+              toast.error(message || '笔记生成失败')
               console.warn(`⚠️ 任务 ${task.id} 失败`)
             } else {
               updateTaskContent(task.id, { status })

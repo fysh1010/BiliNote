@@ -6,10 +6,12 @@ import { Button } from '@/components/ui/button'
 import { Select, SelectContent, SelectItem, SelectTrigger } from '@/components/ui/select'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import { Badge } from '@/components/ui/badge'
+import { useProviderStore } from '@/store/providerStore'
 
 interface VersionNote {
   ver_id: string
   model_name?: string
+  provider_id?: string
   style?: string
   created_at?: string
 }
@@ -47,6 +49,15 @@ export function MarkdownHeader({
   setViewMode,
 }: NoteHeaderProps) {
   const [copied, setCopied] = useState(false)
+  const { getProviderById } = useProviderStore()
+
+  // 获取供应商名称的函数
+  const getProviderName = (providerId: string) => {
+    if (!providerId) return ''
+    const provider = getProviderById(providerId)
+    console.log('Debug - providerId:', providerId, 'provider:', provider)
+    return provider?.name || ''
+  }
 
   useEffect(() => {
     let timer: NodeJS.Timeout
@@ -66,6 +77,12 @@ export function MarkdownHeader({
   const reversedMarkdown: VersionNote[] = Array.isArray(currentTask?.markdown)
     ? [...currentTask!.markdown].reverse()
     : []
+
+  // 获取当前版本的供应商信息
+  const currentVersion = reversedMarkdown.find(v => v.ver_id === currentVerId)
+  console.log('Debug - currentVersion:', currentVersion)
+  console.log('Debug - all providers:', useProviderStore.getState().provider)
+  const currentProviderName = currentVersion?.provider_id ? getProviderName(currentVersion.provider_id) : ''
 
   const formatDate = (date: string | Date | undefined) => {
     if (!date) return ''
@@ -111,7 +128,7 @@ export function MarkdownHeader({
         )}
 
         <Badge variant="secondary" className="bg-pink-100 text-pink-700 hover:bg-pink-200">
-          {modelName}
+          {currentProviderName && `${currentProviderName} / `}{modelName}
         </Badge>
         <Badge variant="secondary" className="bg-cyan-100 text-cyan-700 hover:bg-cyan-200">
           {styleName}

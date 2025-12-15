@@ -30,7 +30,9 @@ import { Button } from '@/components/ui/button.tsx'
 import {
   Select,
   SelectContent,
+  SelectGroup,
   SelectItem,
+  SelectLabel,
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select.tsx'
@@ -39,6 +41,7 @@ import { Textarea } from '@/components/ui/textarea.tsx'
 import { noteStyles, noteFormats, videoPlatforms } from '@/constant/note.ts'
 import { fetchModels } from '@/services/model.ts'
 import { useNavigate } from 'react-router-dom'
+import { useProviderStore } from '@/store/providerStore'
 
 /* -------------------- 校验 Schema -------------------- */
 const formSchema = z
@@ -135,6 +138,7 @@ const NoteForm = () => {
   const { addPendingTask, currentTaskId, setCurrentTask, getCurrentTask, retryTask } =
     useTaskStore()
   const { loadEnabledModels, modelList, showFeatureHint, setShowFeatureHint } = useModelStore()
+  const { provider: providers, fetchProviderList } = useProviderStore()
 
   /* ---- 表单 ---- */
   const form = useForm<NoteFormValues>({
@@ -142,7 +146,7 @@ const NoteForm = () => {
     defaultValues: {
       platform: 'bilibili',
       quality: 'medium',
-      model_name: modelList[0]?.model_name || '',
+      model_name: modelList[0] ? `${modelList[0].provider_id}::${modelList[0].model_name}` : '',
       style: 'minimal',
       video_interval: 4,
       grid_size: [3, 3],
@@ -162,6 +166,7 @@ const NoteForm = () => {
   /* ---- 副作用 ---- */
   useEffect(() => {
     loadEnabledModels()
+    fetchProviderList()
 
     return
   }, [])
@@ -174,7 +179,10 @@ const NoteForm = () => {
     form.reset({
       platform: formData.platform || 'bilibili',
       video_url: formData.video_url || '',
-      model_name: formData.model_name || modelList[0]?.model_name || '',
+      model_name:
+        (formData.provider_id && formData.model_name && !String(formData.model_name).includes('::'))
+          ? `${formData.provider_id}::${formData.model_name}`
+          : (formData.model_name || (modelList[0] ? `${modelList[0].provider_id}::${modelList[0].model_name}` : '')),
       style: formData.style || 'minimal',
       quality: formData.quality || 'medium',
       extras: formData.extras || '',
@@ -218,9 +226,14 @@ const NoteForm = () => {
 
   const onSubmit = async (values: NoteFormValues) => {
     console.log('Not even go here')
+    const selected = String(values.model_name || '')
+    const parts = selected.split('::')
+    const providerId = parts.length >= 2 ? parts[0] : (modelList.find(m => m.model_name === values.model_name)?.provider_id || '')
+    const modelName = parts.length >= 2 ? parts.slice(1).join('::') : values.model_name
     const payload: NoteFormValues = {
       ...values,
-      provider_id: modelList.find(m => m.model_name === values.model_name)!.provider_id,
+      provider_id: providerId,
+      model_name: modelName,
       task_id: currentTaskId || '',
     }
     if (currentTaskId) {
@@ -386,8 +399,14 @@ const NoteForm = () => {
                  <FormItem>
                    <SectionHeader title="模型选择" tip="不同模型效果不同，建议自行测试" />
                    <Select
-                     onOpenChange={()=>{
+                     onOpenChange={() => {
                        loadEnabledModels()
+                       if (field.value && !String(field.value).includes('::')) {
+                         const found = modelList.find(m => m.model_name === field.value)
+                         if (found) {
+                           field.onChange(`${found.provider_id}::${found.model_name}`)
+                         }
+                       }
                      }}
                      value={field.value}
                      onValueChange={field.onChange}
@@ -399,14 +418,32 @@ const NoteForm = () => {
                        </SelectTrigger>
                      </FormControl>
                      <SelectContent>
-                       {modelList.map(m => (
-                         <SelectItem key={m.id} value={m.model_name}>
-                           {m.model_name}
-                         </SelectItem>
-                       ))}
-                     </SelectContent>
-                   </Select>
-                   <FormMessage />
+                      {(() => {
+                        const providerNameById = new Map<string, string>()
+                        providers.forEach(p => providerNameById.set(String(p.id), p.name))
+                        const grouped = new Map<string, typeof modelList>()
+                        modelList.forEach(m => {
+                          const pid = String(m.provider_id)
+                          if (!grouped.has(pid)) grouped.set(pid, [])
+                          grouped.get(pid)!.push(m)
+                        })
+                        return Array.from(grouped.entries()).map(([pid, items]) => {
+                          const providerName = providerNameById.get(pid) || pid
+                          return (
+                            <SelectGroup key={pid}>
+                              <SelectLabel>{providerName}</SelectLabel>
+                              {items.map(m => (
+                                <SelectItem key={`${pid}-${m.id}`} value={`${pid}::${m.model_name}`}>
+                                  {m.model_name}
+                                </SelectItem>
+                              ))}
+                            </SelectGroup>
+                          )
+                        })
+                      })()}
+                    </SelectContent>
+                  </Select>
+                  <FormMessage />
                  </FormItem>
                )}
              />): (

@@ -35,6 +35,7 @@ const ProviderSchema = z.object({
   name: z.string().min(2, '名称不能少于 2 个字符'),
   apiKey: z.string().optional(),
   baseUrl: z.string().url('必须是合法 URL'),
+  logo: z.string().optional(),
   type: z.string(),
 })
 
@@ -63,13 +64,15 @@ const ProviderForm = ({ isCreate = false }: { isCreate?: boolean }) => {
   const loadProviderById = useProviderStore(state => state.loadProviderById)
   const updateProvider = useProviderStore(state => state.updateProvider)
   const addNewProvider = useProviderStore(state => state.addNewProvider)
+  const removeProvider = useProviderStore(state => state.deleteProvider)
   const [loading, setLoading] = useState(true)
   const [testing, setTesting] = useState(false)
   const [isBuiltIn, setIsBuiltIn] = useState(false)
-  const loadModelsById= useModelStore(state => state.loadModelsById)
+  const { loadModelsById, loadModels } = useModelStore()
   const [modelOptions, setModelOptions] = useState<IModel[]>([]) // ⚡新增，保存模型列表
   const [models, setModels]= useState([])
   const [modelLoading, setModelLoading] = useState(false)
+  const [deleting, setDeleting] = useState(false)
   const randomColor = ()=>{
     return '#' + Math.floor(Math.random() * 16777215).toString(16)
   }
@@ -81,6 +84,7 @@ const ProviderForm = ({ isCreate = false }: { isCreate?: boolean }) => {
       name: '',
       apiKey: '',
       baseUrl: '',
+      logo: '',
       type: 'custom',
     },
   })
@@ -100,9 +104,8 @@ const ProviderForm = ({ isCreate = false }: { isCreate?: boolean }) => {
   useEffect(() => {
 
     const load = async () => {
-      if (isEditMode) {
-
-        const data = await loadProviderById(id!)
+      if (isEditMode && id) {
+        const data = await loadProviderById(id)
         providerForm.reset(data)
         setIsBuiltIn(data.type === 'built-in')
       } else {
@@ -110,20 +113,22 @@ const ProviderForm = ({ isCreate = false }: { isCreate?: boolean }) => {
           name: '',
           apiKey: '',
           baseUrl: '',
+          logo: '',
           type: 'custom',
         })
         setIsBuiltIn(false)
       }
-      const models = await loadModelsById(id!)
-      if(models){
-        console.log('🔧 模型列表:', models)
-        setModels(models)
-
+      if (id) {
+        const models = await loadModelsById(id)
+        if(models){
+          console.log('🔧 模型列表:', models)
+          setModels(models)
+        }
       }
       setLoading(false)
     }
     load()
-  }, [id])
+  }, [id, isEditMode, loadModelsById])
   const handelDelete=async (modelId)=>{
     if (!window.confirm('确定要删除这个模型吗？')) return
 
@@ -174,33 +179,63 @@ const ProviderForm = ({ isCreate = false }: { isCreate?: boolean }) => {
     }
     try {
       setModelLoading(true) // ✅ 开始 loading
-      const res = await fetchModels(id!, { noCache: true }) // 这里稍后解释
-      if (res.data.code === 0 && res.data.data.models.data.length > 0) {
-        setModelOptions(res.data.data.models.data)
-        console.log('🔧 模型列表:', res.data.data)
-        toast.success('模型列表加载成功 🎉')
-      } else {
-        toast.error('未获取到模型列表')
-      }
+      const res = await fetchModels(id!) // 从API获取最新模型列表
+      // 更新modelStore中的模型列表
+      await loadModels(id!)
+      // 更新本地已启用模型列表
+      const models = await loadModelsById(id!)
+      setModels(models)
+      console.log('🔧 模型列表:', res)
+      toast.success('模型列表加载成功 🎉')
     } catch (error) {
       toast.error('加载模型列表失败')
     } finally {
-      setModelLoading(false) // ✅ 结束 loading
+      setModelLoading(false) // 
     }
   }
 
-  // 保存Provider信息
+  // Provider
   const onProviderSubmit = async (values: ProviderFormValues) => {
     if (isEditMode) {
       await updateProvider({ ...values, id: id! })
-      toast.success('更新供应商成功')
+      toast.success('保存修改成功')
     } else {
-       id = await addNewProvider({ ...values })
-
-      toast.success('新增供应商成功')
+      const newId = await addNewProvider({ ...values })
+      toast.success('创建供应商成功')
+      if (newId) {
+        navigate(`/settings/model/${newId}`)
+      }
     }
-    // 刷新页面
+    // 
 
+  }
+
+  const handleProviderDelete = async () => {
+    if (!id) {
+      toast.error('')
+      return
+    }
+    if (isBuiltIn) {
+      toast.error('内置模型供应商不支持删除')
+      return
+    }
+    const confirmDelete = window.confirm('确定要删除该模型供应商吗？此操作会移除关联模型。')
+    if (!confirmDelete) return
+
+    try {
+      setDeleting(true)
+      const success = await removeProvider(id)
+      if (success) {
+        toast.success('删除模型供应商成功')
+        navigate('/settings/model')
+      } else {
+        toast.error('删除模型供应商失败')
+      }
+    } catch (error) {
+      toast.error('删除模型供应商异常')
+    } finally {
+      setDeleting(false)
+    }
   }
 
   // 保存Model信息
@@ -219,8 +254,20 @@ const ProviderForm = ({ isCreate = false }: { isCreate?: boolean }) => {
           onSubmit={providerForm.handleSubmit(onProviderSubmit)}
           className="flex max-w-xl flex-col gap-4"
         >
-          <div className="text-lg font-bold">
-            {isEditMode ? '编辑模型供应商' : '新增模型供应商'}
+          <div className="flex items-center justify-between">
+            <div className="text-lg font-bold">
+              {isEditMode ? '编辑模型供应商' : '新增模型供应商'}
+            </div>
+            {isEditMode && (
+              <Button
+                type="button"
+                variant="destructive"
+                onClick={handleProviderDelete}
+                disabled={deleting || isBuiltIn}
+              >
+                {deleting ? '删除中...' : '删除供应商'}
+              </Button>
+            )}
           </div>
           {!isBuiltIn && (
             <div className="text-sm text-red-500 italic">
@@ -282,6 +329,22 @@ const ProviderForm = ({ isCreate = false }: { isCreate?: boolean }) => {
               </FormItem>
             )}
           />
+          <FormField
+            control={providerForm.control}
+            name="logo"
+            render={({ field }) => (
+              <FormItem className="flex items-center gap-4">
+                <FormLabel className="w-24 text-right">图标URL</FormLabel>
+                <FormControl>
+                  <Input {...field} placeholder="可选，输入图标URL自动拉取" className="flex-1" />
+                </FormControl>
+                <FormDescription className="text-xs text-muted-foreground">
+                  输入图片URL，系统将自动拉取图标
+                </FormDescription>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
           <div className="pt-2">
             <Button type="submit" disabled={!providerForm.formState.isDirty}>
               {isEditMode ? '保存修改' : '保存创建'}
@@ -298,7 +361,16 @@ const ProviderForm = ({ isCreate = false }: { isCreate?: boolean }) => {
             <h2 className={'font-bold'}>注意!</h2>
             <span>请确保已经保存供应商信息,以及通过测试连通性.</span>
           </div>
-          <ModelSelector providerId={id!} />
+          {id ? (
+            <ModelSelector
+              key={id}
+              providerId={id}
+              onSaved={async () => {
+                const list = await loadModelsById(id)
+                setModels(list)
+              }}
+            />
+          ) : null}
 
           {/*<datalist id="model-options">*/}
           {/*  {modelOptions.map(model => (*/}

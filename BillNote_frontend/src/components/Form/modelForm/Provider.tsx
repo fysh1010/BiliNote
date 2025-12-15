@@ -29,9 +29,10 @@ const Provider = () => {
           providers.map((provider, index) => {
             return (
               <ProviderCard
-                key={index}
+                key={provider.id}
                 providerName={provider.name}
                 Icon={provider.logo}
+                baseUrl={provider.baseUrl}
                 id={provider.id}
                 enable={provider.enabled}
               />

@@ -18,7 +18,7 @@ export const HomePage: FC = () => {
   useEffect(() => {
     if (!currentTask) {
       setStatus('idle')
-    } else if (currentTask.status === 'PENDING') {
+    } else if (['PENDING', 'RUNNING', 'PARSING', 'DOWNLOADING', 'TRANSCRIBING', 'SUMMARIZING'].includes(currentTask.status)) {
       setStatus('loading')
     } else if (currentTask.status === 'SUCCESS') {
       setStatus('success')

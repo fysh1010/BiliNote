@@ -13,10 +13,11 @@ import toast from 'react-hot-toast'
 
 interface ModelSelectorProps {
   providerId: string
+  onSaved?: () => void
 }
 
-export function ModelSelector({ providerId }: ModelSelectorProps) {
-  const { models, loading, selectedModel, loadModels, setSelectedModel, addNewModel } =
+export function ModelSelector({ providerId, onSaved }: ModelSelectorProps) {
+  const { models, loading, selectedModel, loadModels, setSelectedModel, addNewModel, clearModels } =
     useModelStore()
   const [search, setSearch] = useState('')
   const [submitting, setSubmitting] = useState(false)
@@ -28,10 +29,9 @@ export function ModelSelector({ providerId }: ModelSelectorProps) {
   })
 
   useEffect(() => {
-    if (providerId) {
-      loadModels(providerId)
-    }
-  }, [providerId])
+    clearModels()
+    setSelectedModel('')
+  }, [providerId, clearModels, setSelectedModel])
 
   const handleSubmit = async () => {
     if (!selectedModel) {
@@ -42,6 +42,7 @@ export function ModelSelector({ providerId }: ModelSelectorProps) {
       setSubmitting(true)
       await addNewModel(providerId, selectedModel)
       toast.success('保存模型成功 🎉')
+      onSaved?.()
     } catch (error) {
       toast.error('保存失败')
     } finally {
@@ -57,7 +58,7 @@ export function ModelSelector({ providerId }: ModelSelectorProps) {
           variant="ghost"
           type="button"
           onClick={() => loadModels(providerId)}
-          disabled={loading}
+          disabled={loading || !providerId}
         >
           {loading ? '加载中...' : '刷新模型'}
         </Button>

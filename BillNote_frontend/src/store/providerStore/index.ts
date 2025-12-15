@@ -1,7 +1,8 @@
 import { create } from 'zustand'
-import { IProvider, IResponse } from '@/types'
+import { IProvider } from '@/types'
 import {
   addProvider,
+  deleteProviderById,
   getProviderById,
   getProviderList,
   updateProviderById,
@@ -14,13 +15,23 @@ interface ProviderStore {
   getProviderById: (id: number) => IProvider | undefined
   getProviderList: () => IProvider[]
   fetchProviderList: () => Promise<void>
-  loadProviderById: (id: string) => Promise<void>
-  addNewProvider: (provider: IProvider) => Promise<void>
-  updateProvider: (provider: IProvider) => Promise<void>
+  loadProviderById: (id: string) => Promise<IProvider | undefined>
+  addNewProvider: (provider: IProvider) => Promise<string | undefined>
+  updateProvider: (provider: IProvider) => Promise<string | undefined>
+  deleteProvider: (id: string) => Promise<boolean>
 }
 
 export const useProviderStore = create<ProviderStore>((set, get) => ({
   provider: [],
+
+  sanitizeProvider: (provider: IProvider) => ({
+    ...provider,
+    name: provider.name ? provider.name.trim() : provider.name,
+    apiKey: provider.apiKey ? provider.apiKey.trim() : provider.apiKey,
+    baseUrl: provider.baseUrl ? provider.baseUrl.trim() : provider.baseUrl,
+    logo: provider.logo ? provider.logo.trim() : provider.logo,
+    type: provider.type ? provider.type.trim() : provider.type,
+  }),
 
   // 添加或更新一个 provider
   setProvider: newProvider =>
@@ -38,35 +49,32 @@ export const useProviderStore = create<ProviderStore>((set, get) => ({
   // 设置整个 provider 列表
   setAllProviders: providers => set({ provider: providers }),
   loadProviderById: async (id: string) => {
-    const res:IResponse<IProvider> = await getProviderById(id)
+    const item = await getProviderById(id)
+    if (!item) return
 
-      const item = res
-      return {
-        id: item.id,
-        name: item.name,
-        logo: item.logo,
-        apiKey: item.api_key,
-        baseUrl: item.base_url,
-        type: item.type,
-        enabled: item.enabled,
-      }
-
+    return {
+      id: item.id,
+      name: item.name ? item.name.trim() : item.name,
+      logo: item.logo,
+      apiKey: item.api_key ? item.api_key.trim() : item.api_key,
+      baseUrl: item.base_url ? item.base_url.trim() : item.base_url,
+      type: item.type ? item.type.trim() : item.type,
+      enabled: item.enabled,
+    }
   },
   addNewProvider: async (provider: IProvider) => {
+    const sanitized = get().sanitizeProvider(provider)
     const payload = {
-      ...provider,
-      api_key: provider.apiKey,
-      base_url: provider.baseUrl,
+      ...sanitized,
+      api_key: sanitized.apiKey,
+      base_url: sanitized.baseUrl,
     }
     try {
-      const res = await addProvider(payload)
-      if (res.data.code === 0) {
-        const item = res.data.data
-        console.log('Provider ', item)
-
+      const id = await addProvider(payload)
+      if (id) {
         await get().fetchProviderList()
-        return  item
       }
+      return id
     } catch (error) {
       console.error('Error fetching provider:', error)
     }
@@ -75,19 +83,29 @@ export const useProviderStore = create<ProviderStore>((set, get) => ({
   getProviderById: id => get().provider.find(p => p.id === id),
   updateProvider: async (provider: IProvider) => {
     try {
+      const sanitized = get().sanitizeProvider(provider)
       const data = {
-        ...provider,
-        api_key: provider.apiKey,
-        base_url: provider.baseUrl,
+        ...sanitized,
+        api_key: sanitized.apiKey,
+        base_url: sanitized.baseUrl,
       }
-      const res = await updateProviderById(data)
-      if (res.data.code === 0) {
-        const item = res.data.data
-        console.log('Provider ', item)
+      const id = await updateProviderById(data)
+      if (id) {
         await get().fetchProviderList()
       }
+      return id
     } catch (error) {
       console.error('Error fetching provider:', error)
+    }
+  },
+  deleteProvider: async (id: string) => {
+    try {
+      await deleteProviderById(id)
+      await get().fetchProviderList()
+      return true
+    } catch (error) {
+      console.error('删除模型供应商失败:', error)
+      return false
     }
   },
   getProviderList: () => get().provider,

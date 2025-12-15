@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useMemo } from 'react'
 import ReactMarkdown from 'react-markdown'
 import { Button } from '@/components/ui/button.tsx'
 import { Copy, Download, ArrowRight, Play, ExternalLink } from 'lucide-react'
@@ -14,6 +14,7 @@ import 'react-medium-image-zoom/dist/styles.css'
 import gfm from 'remark-gfm'
 import remarkMath from 'remark-math'
 import rehypeKatex from 'rehype-katex'
+import rehypeRaw from 'rehype-raw'
 import 'katex/dist/katex.min.css'
 import 'github-markdown-css/github-markdown-light.css'
 import { FC } from 'react'
@@ -23,6 +24,36 @@ import { noteStyles } from '@/constant/note.ts'
 import { MarkdownHeader } from '@/pages/HomePage/components/MarkdownHeader.tsx'
 import TranscriptViewer from '@/pages/HomePage/components/transcriptViewer.tsx'
 import MarkmapEditor from '@/pages/HomePage/components/MarkmapComponent.tsx'
+
+type ImageUrlMode = 'preview' | 'export'
+
+const ensureImageUrls = (markdown: string, baseURL: string, mode: ImageUrlMode = 'preview') => {
+  if (!markdown) return markdown
+
+  const fallbackBase = typeof window !== 'undefined' ? window.location.origin : ''
+  const normalizedBase = (baseURL || fallbackBase || '').replace(/\/$/, '')
+
+  let result = markdown
+
+  // 处理带有本地路径注释的图片：![](url)<!--LOCAL_PATH:abs-->
+  result = result.replace(/!\[([^\]]*)\]\(([^)]+)\)<!--LOCAL_PATH:([^>]+)-->/g, (_match, alt, url, localPath) => {
+    const trimmedLocal = localPath.trim()
+    if (mode === 'export' && trimmedLocal) {
+      return `![${alt}](${trimmedLocal})`
+    }
+    return `![${alt}](${url})`
+  })
+
+  if (!normalizedBase) {
+    return result
+  }
+
+  return result.replace(/!\[([^\]]*)\]\(((?:\.\.?\/)?static\/[^)]+)\)/g, (_match, alt, path) => {
+    const cleanedPath = path.replace(/^\.\.?/, '')
+    const normalizedPath = cleanedPath.startsWith('/') ? cleanedPath : `/${cleanedPath.replace(/^\/+/, '')}`
+    return `![${alt}](${normalizedBase}${normalizedPath})`
+  })
+}
 
 interface VersionNote {
   ver_id: string
@@ -48,7 +79,7 @@ const steps = [
 const MarkdownViewer: FC<MarkdownViewerProps> = ({ status }) => {
   const [copied, setCopied] = useState(false)
   const [currentVerId, setCurrentVerId] = useState<string>('')
-  const [selectedContent, setSelectedContent] = useState<string>('')
+  const [rawContent, setRawContent] = useState<string>('')
   const [modelName, setModelName] = useState<string>('')
   const [style, setStyle] = useState<string>('')
   const [createTime, setCreateTime] = useState<string>('')
@@ -71,7 +102,7 @@ const MarkdownViewer: FC<MarkdownViewerProps> = ({ status }) => {
       setModelName(currentTask.formData.model_name)
       setStyle(currentTask.formData.style)
       setCreateTime(currentTask.createdAt)
-      setSelectedContent(currentTask?.markdown)
+      setRawContent(String(currentTask?.markdown || ''))
     } else {
       const latestVersion = [...currentTask.markdown].sort(
         (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
@@ -90,17 +121,35 @@ const MarkdownViewer: FC<MarkdownViewerProps> = ({ status }) => {
       setModelName(currentVer.model_name)
       setStyle(currentVer.style)
       setCreateTime(currentVer.created_at || '')
-      setSelectedContent(currentVer.content)
+      setRawContent(currentVer.content)
     }
   }, [currentVerId, currentTask?.id])
+  const previewContent = useMemo(
+    () => ensureImageUrls(rawContent || '', baseURL, 'preview'),
+    [rawContent, baseURL]
+  )
+
   const handleCopy = async () => {
     try {
-      await navigator.clipboard.writeText(selectedContent)
+      const processed = ensureImageUrls(rawContent, baseURL, 'export')
+      await navigator.clipboard.writeText(processed)
       setCopied(true)
       toast.success('已复制到剪贴板')
       setTimeout(() => setCopied(false), 2000)
     } catch (e) {
       toast.error('复制失败')
+    }
+  }
+
+  // 处理锚点跳转
+  const handleAnchorClick = (e: React.MouseEvent<HTMLAnchorElement>, href: string) => {
+    if (href && href.startsWith('#')) {
+      e.preventDefault()
+      const targetId = href.substring(1)
+      const targetElement = document.getElementById(targetId)
+      if (targetElement) {
+        targetElement.scrollIntoView({ behavior: 'smooth', block: 'start' })
+      }
     }
   }
   const alertButton = {
@@ -133,7 +182,8 @@ const MarkdownViewer: FC<MarkdownViewerProps> = ({ status }) => {
   const handleDownload = () => {
     const task = getCurrentTask()
     const name = task?.audioMeta.title || 'note'
-    const blob = new Blob([selectedContent], { type: 'text/markdown;charset=utf-8' })
+    const processed = ensureImageUrls(rawContent, baseURL, 'export')
+    const blob = new Blob([processed], { type: 'text/markdown;charset=utf-8' })
     const link = document.createElement('a')
     link.href = URL.createObjectURL(blob)
     link.download = `${name}.md`
@@ -206,7 +256,7 @@ const MarkdownViewer: FC<MarkdownViewerProps> = ({ status }) => {
         <div className="flex w-full flex-1 overflow-hidden bg-white">
           <div className={'w-full'}>
             <MarkmapEditor
-              value={selectedContent}
+              value={previewContent}
               onChange={() => {}}
               height="100%" // 根据需求可以设定百分比或固定高度
               title={currentTask?.audioMeta?.title || '思维导图'}
@@ -215,13 +265,14 @@ const MarkdownViewer: FC<MarkdownViewerProps> = ({ status }) => {
         </div>
       ) : (
         <div className="flex flex-1 overflow-hidden bg-white py-2">
-          {selectedContent && selectedContent !== 'loading' && selectedContent !== 'empty' ? (
+          {rawContent && rawContent !== 'loading' && rawContent !== 'empty' ? (
             <>
               <ScrollArea className="w-full">
                 <div className={'markdown-body w-full px-2'}>
                   <ReactMarkdown
                     remarkPlugins={[gfm, remarkMath]}
-                    rehypePlugins={[rehypeKatex]}
+                    rehypePlugins={[rehypeKatex, rehypeRaw]}
+                    children={previewContent}
                     components={{
                       // Headings with improved styling and anchor links
                       h1: ({ children, ...props }) => (
@@ -264,11 +315,13 @@ const MarkdownViewer: FC<MarkdownViewerProps> = ({ status }) => {
                         </p>
                       ),
 
-                      // Enhanced links with special handling for "原片" links
+                      // Enhanced links with special handling for "原片" links and anchor links
                       a: ({ href, children, ...props }) => {
                         const isOriginLink =
                           typeof children[0] === 'string' &&
                           (children[0] as string).startsWith('原片 @')
+                        
+                        const isAnchorLink = href && href.startsWith('#')
 
                         if (isOriginLink) {
                           const timeMatch = (children[0] as string).match(/原片 @ (\d{2}:\d{2})/)
@@ -287,6 +340,19 @@ const MarkdownViewer: FC<MarkdownViewerProps> = ({ status }) => {
                                 <span>原片（{timeText}）</span>
                               </a>
                             </span>
+                          )
+                        }
+
+                        if (isAnchorLink) {
+                          return (
+                            <a
+                              href={href}
+                              onClick={(e) => handleAnchorClick(e, href)}
+                              className="text-primary hover:text-primary/80 font-medium underline underline-offset-4 cursor-pointer"
+                              {...props}
+                            >
+                              {children}
+                            </a>
                           )
                         }
 
@@ -317,15 +383,12 @@ const MarkdownViewer: FC<MarkdownViewerProps> = ({ status }) => {
                         props.src = src
 
                      return(
-                      <div className="my-8 flex justify-center">
-                          <Zoom>
-                            <img
-                              {...props}
-                              className="max-w-full cursor-zoom-in rounded-lg object-cover shadow-md transition-all hover:shadow-lg"
-                              style={{ maxHeight: '500px' }}
-                            />
-                          </Zoom>
-                        </div>
+                      <Zoom>
+                        <img
+                          {...props}
+                          className="max-w-full"
+                        />
+                      </Zoom>
                       )},
 
                       // Better strong/bold text
@@ -463,7 +526,7 @@ const MarkdownViewer: FC<MarkdownViewerProps> = ({ status }) => {
                       ),
                     }}
                   >
-                    {selectedContent}
+                    {previewContent}
                   </ReactMarkdown>
                 </div>
               </ScrollArea>

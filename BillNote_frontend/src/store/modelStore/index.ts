@@ -71,8 +71,10 @@ export const useModelStore = create<ModelStore>()(
         // 兼容 SyncPage 分页对象与普通数组两种格式
         if (Array.isArray(res.models)) {
           models = res.models
-        } else if (res.models?.data && Array.isArray(res.models.data)) {
-          models = res.models.data
+        } else if (res.data?.code === 0 && res.data?.data?.models?.data && Array.isArray(res.data.data.models.data)) {
+          models = res.data.data.models.data
+        } else if (res.data?.data?.models && Array.isArray(res.data.data.models)) {
+          models = res.data.data.models
         }
 
         set({ models })

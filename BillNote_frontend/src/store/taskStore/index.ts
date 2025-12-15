@@ -34,6 +34,7 @@ export interface Markdown {
   content: string
   style: string
   model_name: string
+  provider_id: string
   created_at: string
 }
 
@@ -120,6 +121,7 @@ export const useTaskStore = create<TaskStore>()(
                   content: data.markdown,
                   style: task.formData.style || '',
                   model_name: task.formData.model_name || '',
+                  provider_id: task.formData.provider_id || '',
                   created_at: new Date().toISOString(),
                 }
 
@@ -135,6 +137,7 @@ export const useTaskStore = create<TaskStore>()(
                           content: prev,
                           style: task.formData.style || '',
                           model_name: task.formData.model_name || '',
+                          provider_id: task.formData.provider_id || '',
                           created_at: new Date().toISOString(),
                         }]
                         : []),
