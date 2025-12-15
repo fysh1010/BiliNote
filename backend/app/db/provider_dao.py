@@ -10,8 +10,10 @@ logger = get_logger(__name__)
 
 def get_builtin_providers_path():
     if getattr(sys, 'frozen', False):
-        base_path = sys._MEIPASS
+        # 打包环境：文件在app/db目录下
+        base_path = os.path.join(sys._MEIPASS, 'app', 'db')
     else:
+        # 开发环境：文件在当前目录下
         base_path = os.path.dirname(__file__)
     return os.path.join(base_path, 'builtin_providers.json')
 
@@ -103,12 +105,19 @@ def update_provider(id: str, **kwargs):
             logger.warning(f"Provider {id} not found for update.")
             return
 
+        updated_fields = []
         for key, value in kwargs.items():
             if hasattr(provider, key):
-                setattr(provider, key, value)
+                # Only update if value is not None and not empty string (for string types)
+                if value is not None and (not isinstance(value, str) or value.strip() != ''):
+                    setattr(provider, key, value)
+                    updated_fields.append(key)
 
-        db.commit()
-        logger.info(f"Provider updated successfully. id: {id}, updated_fields: {list(kwargs.keys())}")
+        if updated_fields:
+            db.commit()
+            logger.info(f"Provider updated successfully. id: {id}, updated_fields: {updated_fields}")
+        else:
+            logger.info(f"No valid fields to update for provider. id: {id}")
     except Exception as e:
         logger.error(f"Failed to update provider: {e}")
     finally:

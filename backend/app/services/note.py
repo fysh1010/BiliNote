@@ -32,7 +32,7 @@ from app.services.constant import SUPPORT_PLATFORM_MAP
 from app.services.provider import ProviderService
 from app.transcriber.base import Transcriber
 from app.transcriber.transcriber_provider import get_transcriber, _transcribers
-from app.utils.note_helper import replace_content_markers
+from app.utils.note_helper import replace_content_markers, generate_toc_with_anchors
 from app.utils.status_code import StatusCode
 from app.utils.video_helper import generate_screenshot
 from app.utils.video_reader import VideoReader
@@ -205,6 +205,26 @@ class NoteGenerator:
         return delete_task_by_video(video_id, platform)
 
     # ---------------- 私有方法 ----------------
+
+    @staticmethod
+    def get_task_status(task_id: str) -> Optional[str]:
+        """读取状态文件，返回任务状态字符串。"""
+        if not task_id:
+            return None
+
+        status_file = NOTE_OUTPUT_DIR / f"{task_id}.status.json"
+        if not status_file.exists():
+            return None
+
+        try:
+            data = json.loads(status_file.read_text(encoding="utf-8"))
+            status = data.get("status")
+            if status:
+                return status
+        except Exception as exc:
+            logger.warning(f"读取任务状态文件失败 (task_id={task_id})：{exc}")
+
+        return None
 
     def _init_transcriber(self) -> Transcriber:
         """
@@ -451,7 +471,7 @@ class NoteGenerator:
         formats: List[str],
         style: Optional[str],
         extras: Optional[str],
-            video_img_urls: List[str],
+        video_img_urls: List[str],
     ) -> str | None:
         """
         调用 GPT 对转写结果进行总结，生成 Markdown 文本并缓存。
@@ -465,6 +485,7 @@ class NoteGenerator:
         :param formats: 包含 'link' 或 'screenshot' 的列表
         :param style: GPT 输出风格
         :param extras: GPT 额外参数
+        :param video_img_urls: 视频截图 URL 列表
         :return: 生成的 Markdown 字符串
         """
         task_id = markdown_cache_file.stem
@@ -492,6 +513,51 @@ class NoteGenerator:
             self._handle_exception(task_id, exc)
             raise
 
+    def _insert_screenshots(self, markdown: str, video_path: Path) -> str | None:
+        """
+        扫描 Markdown 文本中所有 Screenshot 标记，并替换为实际生成的截图链接。
+
+        :param markdown: Markdown 文本
+        :param video_path: 视频文件路径
+        :return: 替换后的 Markdown 文本
+        """
+        matches: List[Tuple[str, int]] = self._extract_screenshot_timestamps(markdown)
+        for idx, (marker, ts) in enumerate(matches):
+            try:
+                img_path = Path(generate_screenshot(str(video_path), str(IMAGE_OUTPUT_DIR), ts, idx)).resolve()
+                filename = img_path.name
+                web_url = f"{IMAGE_BASE_URL.rstrip('/')}/{filename}"
+                absolute_path = img_path.as_posix()
+
+                # 写入前端可渲染的 URL，并附带本地绝对路径注释，便于导出时替换
+                replacement = f"![]({web_url})<!--LOCAL_PATH:{absolute_path}-->"
+                markdown = markdown.replace(marker, replacement, 1)
+            except Exception as exc:
+                logger.error(f"生成截图失败 (timestamp={ts})：{exc}")
+                return None
+        return markdown
+
+    @staticmethod
+    def _extract_screenshot_timestamps(markdown: str) -> List[Tuple[str, int]]:
+        """
+        从 Markdown 文本中提取所有 '*Screenshot-mm:ss' 或 'Screenshot-[mm:ss]' 标记，
+        并解析出时间戳（分钟和秒）。
+
+        :param markdown: Markdown 文本
+        :return: 标记和时间戳的列表
+        """
+        pattern = r'\*?Screenshot(?:-\[(\d{1,2}:\d{1,2})\])?'
+        results = []
+        for match in re.finditer(pattern, markdown):
+            timestamp = match.group(1)
+            if timestamp:
+                minutes, seconds = map(int, timestamp.split(':'))
+                total_seconds = minutes * 60 + seconds
+            else:
+                total_seconds = 0
+            results.append((match.group(0), total_seconds))
+        return results
+
     def _post_process_markdown(
         self,
         markdown: str,
@@ -501,68 +567,51 @@ class NoteGenerator:
         platform: str,
     ) -> str:
         """
-        对生成的 Markdown 做后期处理：插入截图和/或插入链接。
+        对生成的 Markdown 做后期处理：插入截图和/或插入链接，生成目录。
 
-        :param markdown: 原始 Markdown 字符串
-        :param video_path: 本地视频路径（可为 None）
-        :param formats: 包含 'link' 或 'screenshot' 的列表
-        :param audio_meta: AudioDownloadResult 元信息，用于链接替换
-        :param platform: 平台标识，用于链接替换
-        :return: 处理后的 Markdown 字符串
+        :param markdown: Markdown 文本
+        :param video_path: 视频文件路径
+        :param formats: 包含 'link'、'screenshot'、'toc' 的列表
+        :param audio_meta: AudioDownloadResult 元信息
+        :param platform: 平台标识
+        :return: 处理后的 Markdown 文本
         """
-        if "screenshot" in formats and video_path:
-            try:
-                markdown = self._insert_screenshots(markdown, video_path)
-            except Exception as exc:
-                logger.warning("截图插入失败，跳过该步骤")
-
-        if "link" in formats:
-            try:
-                markdown = replace_content_markers(markdown, video_id=audio_meta.video_id, platform=platform)
-            except Exception as e:
-                logger.warning(f"链接插入失败，跳过该步骤：{e}")
-
+        # 处理原片跳转链接
+        if 'link' in formats:
+            markdown = replace_content_markers(markdown, audio_meta.video_id, platform)
+        
+        # 生成目录并添加锚点
+        if 'toc' in formats:
+            toc_content, markdown_with_anchors = generate_toc_with_anchors(markdown)
+            if toc_content:
+                # 在第一个二级标题前插入目录
+                lines = markdown_with_anchors.split('\n')
+                insert_index = 0
+                for i, line in enumerate(lines):
+                    if re.match(r'^#{1,2}\s+', line):
+                        insert_index = i
+                        break
+                
+                # 插入目录部分
+                toc_section = [
+                    '',
+                    '## 📑 目录',
+                    '',
+                    toc_content,
+                    '',
+                    '---',
+                    ''
+                ]
+                lines[insert_index:insert_index] = toc_section
+                markdown = '\n'.join(lines)
+            else:
+                markdown = markdown_with_anchors
+        
+        # 处理截图
+        if 'screenshot' in formats and video_path:
+            markdown = self._insert_screenshots(markdown, video_path)
+        
         return markdown
-
-    def _insert_screenshots(self, markdown: str, video_path: Path) -> str | None | Any:
-        """
-        扫描 Markdown 文本中所有 Screenshot 标记，并替换为实际生成的截图链接。
-
-        :param markdown: 含有 *Screenshot-mm:ss 或 Screenshot-[mm:ss] 标记的 Markdown 文本
-        :param video_path: 本地视频文件路径
-        :return: 替换后的 Markdown 字符串
-        """
-        matches: List[Tuple[str, int]] = self._extract_screenshot_timestamps(markdown)
-        for idx, (marker, ts) in enumerate(matches):
-            try:
-                img_path = generate_screenshot(str(video_path), str(IMAGE_OUTPUT_DIR), ts, idx)
-                filename = Path(img_path).name
-                # 构建前端可访问的 URL，例如 /static/screenshots/{filename}
-                img_url = f"{IMAGE_BASE_URL.rstrip('/')}/{filename}"
-                markdown = markdown.replace(marker, f"![]({img_url})", 1)
-            except Exception as exc:
-                logger.error(f"生成截图失败 (timestamp={ts})：{exc}")
-                # self._handle_exception(task_id, exc)
-                return None
-        return markdown
-
-    @staticmethod
-    def _extract_screenshot_timestamps(markdown: str) -> List[Tuple[str, int]]:
-        """
-        从 Markdown 文本中提取所有 '*Screenshot-mm:ss' 或 'Screenshot-[mm:ss]' 标记，
-        返回 [(原始标记文本, 时间戳秒数), ...] 列表。
-
-        :param markdown: 原始 Markdown 文本
-        :return: 标记与对应时间戳秒数的列表
-        """
-        pattern = r"(?:\*Screenshot-(\d{2}):(\d{2})|Screenshot-\[(\d{2}):(\d{2})\])"
-        results: List[Tuple[str, int]] = []
-        for match in re.finditer(pattern, markdown):
-            mm = match.group(1) or match.group(3)
-            ss = match.group(2) or match.group(4)
-            total_seconds = int(mm) * 60 + int(ss)
-            results.append((match.group(0), total_seconds))
-        return results
 
     def _save_metadata(self, video_id: str, platform: str, task_id: str) -> None:
         """
@@ -575,5 +624,5 @@ class NoteGenerator:
         try:
             insert_video_task(video_id=video_id, platform=platform, task_id=task_id)
             logger.info(f"已保存任务记录到数据库 (video_id={video_id}, platform={platform}, task_id={task_id})")
-        except Exception as e:
-            logger.error(f"保存任务记录失败：{e}")
+        except Exception as exc:
+            logger.error(f"保存任务记录失败：{exc}")

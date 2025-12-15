@@ -1,5 +1,7 @@
 
 
+from typing import Any
+
 from app.db.model_dao import insert_model, get_all_models, get_model_by_provider_and_name, delete_model
 from app.db.provider_dao import get_enabled_providers
 from app.enmus.exception import ProviderErrorEnum
@@ -12,6 +14,44 @@ from app.utils.logger import get_logger
 
 logger=get_logger(__name__)
 class ModelService:
+
+    @staticmethod
+    def _normalize_model_items(models: Any) -> list[dict]:
+        items: list[Any] = []
+
+        if models is None:
+            items = []
+        elif hasattr(models, "data"):
+            try:
+                items = list(getattr(models, "data"))
+            except TypeError:
+                items = []
+        elif isinstance(models, dict):
+            if isinstance(models.get("data"), list):
+                items = models.get("data")
+            elif isinstance(models.get("models"), list):
+                items = models.get("models")
+            else:
+                items = []
+        elif isinstance(models, list):
+            items = models
+        else:
+            items = [models]
+
+        normalized: list[dict] = []
+        for m in items:
+            model_id: str | None = None
+            if isinstance(m, str):
+                model_id = m
+            elif isinstance(m, dict):
+                model_id = m.get("id") or m.get("model") or m.get("name")
+            else:
+                model_id = getattr(m, "id", None) or getattr(m, "model", None) or getattr(m, "name", None)
+
+            if model_id:
+                normalized.append({"id": str(model_id)})
+
+        return normalized
 
     @staticmethod
     def _build_model_config(provider: dict) -> ModelConfig:
@@ -83,22 +123,21 @@ class ModelService:
         return enabled_models
     @staticmethod
     def get_all_models_by_id(provider_id: str, verbose: bool = False):
+        provider = ProviderService.get_provider_by_id(provider_id)
+        if not provider:
+            raise ValueError(f"Provider not found: {provider_id}")
+
         try:
-            provider = ProviderService.get_provider_by_id(provider_id)
+            config = ModelService._build_model_config(provider)
+            gpt = GPTFactory().from_config(config)
+            models = gpt.list_models()
 
-            models = ModelService.get_model_list(provider["id"], verbose=verbose)
-            print(type(models))
-            serializable_models = [m.dict() for m in models.data]
-            model_list = {
-                "models": serializable_models
-            }
-
+            model_list = {"models": ModelService._normalize_model_items(models)}
             logger.info(f"[{provider['name']}] 获取模型成功")
             return model_list
         except Exception as e:
-            # print(f"[{provider_id}] 获取模型失败: {e}")
-            logger.error(f"[{provider_id}] 获取模型失败: {e}")
-            return []
+            logger.error(f"[{provider.get('name', provider_id)}] 获取模型失败: {e}")
+            raise
     @staticmethod
     def connect_test(id: str) -> bool:
 

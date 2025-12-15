@@ -10,6 +10,23 @@ from app.utils.path_helper import get_data_dir
 from app.utils.url_parser import extract_video_id
 
 
+def _env_bool(name: str, default: bool = False) -> bool:
+    v = os.getenv(name)
+    if v is None:
+        return default
+    return v.strip().lower() in {"1", "true", "yes", "y", "on"}
+
+
+def _env_int(name: str, default: int) -> int:
+    v = os.getenv(name)
+    if v is None or not v.strip():
+        return default
+    try:
+        return int(v)
+    except ValueError:
+        return default
+
+
 class BilibiliDownloader(Downloader, ABC):
     def __init__(self):
         super().__init__()
@@ -19,15 +36,31 @@ class BilibiliDownloader(Downloader, ABC):
         video_url: str,
         output_dir: Union[str, None] = None,
         quality: DownloadQuality = "fast",
-        need_video:Optional[bool]=False
+        need_video: Optional[bool] = False
     ) -> AudioDownloadResult:
         if output_dir is None:
             output_dir = get_data_dir()
         if not output_dir:
-            output_dir=self.cache_data
+            output_dir = self.cache_data
         os.makedirs(output_dir, exist_ok=True)
 
         output_path = os.path.join(output_dir, "%(id)s.%(ext)s")
+
+        proxy = os.getenv("YTDLP_PROXY")
+        socket_timeout = os.getenv("YTDLP_SOCKET_TIMEOUT")
+        retries = _env_int("YTDLP_RETRIES", 3)
+        no_check_cert = _env_bool("YTDLP_NO_CHECK_CERTIFICATE", False)
+        force_ipv4 = _env_bool("YTDLP_FORCE_IPV4", False)
+        user_agent = os.getenv(
+            "YTDLP_USER_AGENT",
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36",
+        )
+
+        ffmpeg_bin_path = os.getenv("FFMPEG_BIN_PATH")
+        ffmpeg_location = None
+        if ffmpeg_bin_path:
+            candidate = os.path.join(ffmpeg_bin_path, "ffmpeg.exe")
+            ffmpeg_location = candidate if os.path.isfile(candidate) else ffmpeg_bin_path
 
         ydl_opts = {
             'format': 'bestaudio[ext=m4a]/bestaudio/best',
@@ -42,6 +75,23 @@ class BilibiliDownloader(Downloader, ABC):
             'noplaylist': True,
             'quiet': False,
         }
+
+        if proxy is not None:
+            ydl_opts["proxy"] = proxy
+        if socket_timeout and socket_timeout.strip():
+            try:
+                ydl_opts["socket_timeout"] = float(socket_timeout)
+            except ValueError:
+                pass
+
+        ydl_opts["retries"] = retries
+        ydl_opts["fragment_retries"] = retries
+        ydl_opts["nocheckcertificate"] = no_check_cert
+        ydl_opts["http_headers"] = {"User-Agent": user_agent, "Referer": "https://www.bilibili.com/"}
+        if ffmpeg_location:
+            ydl_opts["ffmpeg_location"] = ffmpeg_location
+        if force_ipv4:
+            ydl_opts["source_address"] = "0.0.0.0"
 
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             info = ydl.extract_info(video_url, download=True)
@@ -85,6 +135,22 @@ class BilibiliDownloader(Downloader, ABC):
 
         output_path = os.path.join(output_dir, "%(id)s.%(ext)s")
 
+        proxy = os.getenv("YTDLP_PROXY")
+        socket_timeout = os.getenv("YTDLP_SOCKET_TIMEOUT")
+        retries = _env_int("YTDLP_RETRIES", 3)
+        no_check_cert = _env_bool("YTDLP_NO_CHECK_CERTIFICATE", False)
+        force_ipv4 = _env_bool("YTDLP_FORCE_IPV4", False)
+        user_agent = os.getenv(
+            "YTDLP_USER_AGENT",
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36",
+        )
+
+        ffmpeg_bin_path = os.getenv("FFMPEG_BIN_PATH")
+        ffmpeg_location = None
+        if ffmpeg_bin_path:
+            candidate = os.path.join(ffmpeg_bin_path, "ffmpeg.exe")
+            ffmpeg_location = candidate if os.path.isfile(candidate) else ffmpeg_bin_path
+
         ydl_opts = {
             'format': 'bv*[ext=mp4]/bestvideo+bestaudio/best',
             'outtmpl': output_path,
@@ -92,6 +158,23 @@ class BilibiliDownloader(Downloader, ABC):
             'quiet': False,
             'merge_output_format': 'mp4',  # 确保合并成 mp4
         }
+
+        if proxy is not None:
+            ydl_opts["proxy"] = proxy
+        if socket_timeout and socket_timeout.strip():
+            try:
+                ydl_opts["socket_timeout"] = float(socket_timeout)
+            except ValueError:
+                pass
+
+        ydl_opts["retries"] = retries
+        ydl_opts["fragment_retries"] = retries
+        ydl_opts["nocheckcertificate"] = no_check_cert
+        ydl_opts["http_headers"] = {"User-Agent": user_agent, "Referer": "https://www.bilibili.com/"}
+        if ffmpeg_location:
+            ydl_opts["ffmpeg_location"] = ffmpeg_location
+        if force_ipv4:
+            ydl_opts["source_address"] = "0.0.0.0"
 
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             info = ydl.extract_info(video_url, download=True)

@@ -10,11 +10,12 @@ from fastapi import APIRouter, HTTPException, BackgroundTasks, UploadFile, File
 from pydantic import BaseModel, validator, field_validator
 from dataclasses import asdict
 
-from app.db.video_task_dao import get_task_by_video
+from app.db.video_task_dao import get_task_by_video, delete_task_by_video
 from app.enmus.exception import NoteErrorEnum
 from app.enmus.note_enums import DownloadQuality
 from app.exceptions.note import NoteError
 from app.services.note import NoteGenerator, logger
+from app.utils.logger import get_logger
 from app.utils.response import ResponseWrapper as R
 from app.utils.url_parser import extract_video_id
 from app.validators.video_url_validator import is_supported_video_url
@@ -27,6 +28,7 @@ from app.enmus.task_status_enums import TaskStatus
 # from app.services.whisperer import transcribe_audio
 
 router = APIRouter()
+status_logger = get_logger(__name__)
 
 
 class RecordRequest(BaseModel):
@@ -141,6 +143,21 @@ def generate_note(data: VideoRequest, background_tasks: BackgroundTasks):
         #         msg='笔记已生成，请勿重复发起',
         #
         #     )
+        if not data.task_id:
+            existing_task_id = get_task_by_video(video_id, data.platform)
+            if existing_task_id:
+                status = NoteGenerator.get_task_status(existing_task_id)
+                # 如果已有任务且未失败，则直接复用
+                if status != TaskStatus.FAILED.value:
+                    status_value = status or TaskStatus.PENDING.value
+                    return R.success({
+                        "task_id": existing_task_id,
+                        "status": status_value,
+                        "reused": True,
+                    }, msg="检测到已存在的任务，直接返回结果")
+
+                # 若之前任务失败，则清理记录后重新创建
+                delete_task_by_video(video_id, data.platform)
         if data.task_id:
             # 如果传了task_id，说明是重试！
             task_id = data.task_id
@@ -192,7 +209,12 @@ def get_task_status(task_id: str):
                 })
 
         if status == TaskStatus.FAILED.value:
-            return R.error(message or "任务失败", code=500)
+            status_logger.error(f"任务 {task_id} 失败: {message}")
+            return R.success({
+                "status": TaskStatus.FAILED.value,
+                "message": message or "任务失败",
+                "task_id": task_id
+            })
 
         # 处理中状态
         return R.success({

@@ -8,8 +8,10 @@ from app.db.provider_dao import (
     get_provider_by_name,
     get_provider_by_id,
     update_provider,
-    delete_provider, get_enabled_providers,
+    delete_provider as dao_delete_provider,
+    get_enabled_providers,
 )
+from app.db.model_dao import delete_models_by_provider
 from app.gpt.gpt_factory import GPTFactory
 from app.models.model_config import ModelConfig
 
@@ -71,8 +73,25 @@ class ProviderService:
     @staticmethod
     def add_provider( name: str, api_key: str, base_url: str, logo: str, type_: str, enabled: int = 1):
         try:
+            # 使用传入的logo参数，如果为空则使用'custom'作为默认值
+            if not logo or logo.strip() == '':
+                logo = 'custom'
+
+            # 如果已存在同名且非内置的供应商，则直接更新
+            existing = get_provider_by_name(name)
+            if existing and existing.type != 'built-in':
+                update_provider(
+                    existing.id,
+                    name=name,
+                    api_key=api_key,
+                    base_url=base_url,
+                    logo=logo,
+                    type=type_,
+                    enabled=enabled,
+                )
+                return existing.id
+
             id = uuid().lower()
-            logo='custom'
             return insert_provider(id, name, api_key, base_url, logo, type_, enabled)
         except Exception as  e:
             print('创建模式失败',e)
@@ -131,4 +150,15 @@ class ProviderService:
 
     @staticmethod
     def delete_provider(id: str):
-        return delete_provider(id)
+        provider = get_provider_by_id(id)
+        if not provider:
+            return False
+
+        # 内置供应商不允许删除
+        if provider.type == 'built-in':
+            raise ValueError('内置模型供应商不支持删除')
+
+        # 删除关联模型
+        delete_models_by_provider(id)
+        dao_delete_provider(id)
+        return True

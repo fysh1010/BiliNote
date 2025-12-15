@@ -2,9 +2,9 @@ from fastapi.responses import JSONResponse
 from app.utils.status_code import StatusCode
 from pydantic import BaseModel
 from typing import Optional, Any
+from app.utils.logger import get_logger
 
-
-from fastapi.responses import JSONResponse
+logger = get_logger(__name__)
 
 class ResponseWrapper:
     @staticmethod
@@ -17,6 +17,7 @@ class ResponseWrapper:
 
     @staticmethod
     def error(msg="error", code=500, data=None):
+        logger.error(f"响应错误: code={code}, msg={msg}")
         return JSONResponse(content={
             "code": code,
             "msg": str(msg),
