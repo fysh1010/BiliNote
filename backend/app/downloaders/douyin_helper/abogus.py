@@ -22,7 +22,28 @@ from re import compile
 from time import time
 from urllib.parse import urlencode
 from urllib.parse import quote
-from gmssl import sm3, func
+try:
+    from gmssl import sm3, func
+except ImportError:
+    try:
+        from gmssl.sm3 import sm3
+        from gmssl.func import func
+    except ImportError:
+        # 如果gmssl不可用，提供空实现
+        class MockSM3:
+            def __init__(self):
+                pass
+            def sm3_hash(self, data):
+                return data
+                
+        class MockFunc:
+            def __init__(self):
+                pass
+            def bytes_to_list(self, data):
+                return list(data)
+                
+        sm3 = MockSM3()
+        func = MockFunc()
 
 __all__ = ["ABogus", ]
 

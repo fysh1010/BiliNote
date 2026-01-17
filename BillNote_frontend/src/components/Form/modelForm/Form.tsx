@@ -162,8 +162,7 @@ const ProviderForm = ({ isCreate = false }: { isCreate?: boolean }) => {
         toast.success('测试连通性成功 🎉')
 
     } catch (error) {
-
-      toast.error(`连接失败: ${data.data.msg || '未知错误'}`)
+      toast.error(`连接失败: ${error || '未知错误'}`)
       // toast.error('测试连通性异常')
     } finally {
       setTesting(false)
@@ -196,18 +195,23 @@ const ProviderForm = ({ isCreate = false }: { isCreate?: boolean }) => {
 
   // Provider
   const onProviderSubmit = async (values: ProviderFormValues) => {
-    if (isEditMode) {
-      await updateProvider({ ...values, id: id! })
-      toast.success('保存修改成功')
-    } else {
-      const newId = await addNewProvider({ ...values })
-      toast.success('创建供应商成功')
-      if (newId) {
-        navigate(`/settings/model/${newId}`)
+    try {
+      if (isEditMode) {
+        await updateProvider({ ...values, id: id! })
+        toast.success('保存修改成功')
+      } else {
+        const newId = await addNewProvider({ ...values })
+        if (newId) {
+          toast.success('创建供应商成功')
+          navigate(`/settings/model/${newId}`)
+        } else {
+          toast.error('创建供应商失败')
+        }
       }
+    } catch (error) {
+      console.error('Provider submit error:', error)
+      toast.error(`操作失败: ${error || '未知错误'}`)
     }
-    // 
-
   }
 
   const handleProviderDelete = async () => {

@@ -1,5 +1,5 @@
 from fastapi.encoders import jsonable_encoder
-from kombu import uuid
+import uuid
 
 from app.db.models.providers import Provider
 from app.db.provider_dao import (
@@ -78,9 +78,11 @@ class ProviderService:
                 logo = 'custom'
 
             # 如果已存在同名且非内置的供应商，则直接更新
-            existing = get_provider_by_name(name)
+            from app.db.provider_dao import get_provider_by_name as dao_get_provider_by_name
+            from app.db.provider_dao import update_provider as dao_update_provider
+            existing = dao_get_provider_by_name(name)
             if existing and existing.type != 'built-in':
-                update_provider(
+                dao_update_provider(
                     existing.id,
                     name=name,
                     api_key=api_key,
@@ -91,10 +93,14 @@ class ProviderService:
                 )
                 return existing.id
 
-            id = uuid().lower()
-            return insert_provider(id, name, api_key, base_url, logo, type_, enabled)
+            id = str(uuid.uuid4())
+            result = insert_provider(id, name, api_key, base_url, logo, type_, enabled)
+            if not result:
+                raise Exception('创建供应商失败')
+            return result
         except Exception as  e:
-            print('创建模式失败',e)
+            print('创建供应商失败',e)
+            raise
     @staticmethod
     def provider_to_dict(p: Provider):
         return {
@@ -121,36 +127,41 @@ class ProviderService:
         return [ProviderService.serialize_provider(row) for row in rows] if (rows) else []
     @staticmethod
     def get_provider_by_name(name: str):
-        row = get_provider_by_name(name)
+        from app.db.provider_dao import get_provider_by_name as dao_get_provider_by_name
+        row = dao_get_provider_by_name(name)
         return ProviderService.serialize_provider(row)
 
     @staticmethod
     def get_provider_by_id(id: str):  # 已改为 str 类型
-        row = get_provider_by_id(id)
+        from app.db.provider_dao import get_provider_by_id as dao_get_provider_by_id
+        row = dao_get_provider_by_id(id)
         return ProviderService.serialize_provider(row)
 
     @staticmethod
     def get_provider_by_id_safe(id: str):  # 已改为 str 类型
-        row = get_provider_by_id(id)
+        from app.db.provider_dao import get_provider_by_id as dao_get_provider_by_id
+        row = dao_get_provider_by_id(id)
         return ProviderService.serialize_provider_safe(row)
             # all_models.extend(provider['models'])
 
     @staticmethod
     def update_provider(id: str, data: dict)->str | None:
         try:
-        # 过滤掉空值
+            # 过滤掉空值
             filtered_data = {k: v for k, v in data.items() if v is not None and k != 'id'}
             print('更新模型供应商',filtered_data)
-            update_provider(id, **filtered_data)
+            from app.db.provider_dao import update_provider as dao_update_provider
+            dao_update_provider(id, **filtered_data)
             return id
 
         except Exception as e:
             print('更新模型供应商失败：',e)
-            return None
+            raise
 
     @staticmethod
     def delete_provider(id: str):
-        provider = get_provider_by_id(id)
+        from app.db.provider_dao import get_provider_by_id as dao_get_provider_by_id
+        provider = dao_get_provider_by_id(id)
         if not provider:
             return False
 

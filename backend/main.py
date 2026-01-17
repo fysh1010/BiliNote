@@ -68,7 +68,7 @@ async def lifespan(app: FastAPI):
 
 app = create_app(lifespan=lifespan)
 
-serve_frontend = os.getenv("SERVE_FRONTEND", "false").lower() in {"1", "true", "yes", "y", "on"}
+serve_frontend = os.getenv("SERVE_FRONTEND", "true").lower() in {"1", "true", "yes", "y", "on"}
 
 if serve_frontend:
     # 前端静态文件配置（默认关闭；仅在 SERVE_FRONTEND=true 时启用）
@@ -156,9 +156,9 @@ if __name__ == "__main__":
     logger.info(f"Starting server on {host}:{port}")
     logger.info(f"Open this URL in your browser: {access_url}")
     
-    # 启动线程自动打开浏览器（已禁用）
-    # auto_open = os.getenv("AUTO_OPEN_BROWSER", "true").lower() in {"1", "true", "yes", "y", "on"}
-    # if auto_open:
-    #     threading.Thread(target=open_browser).start()
+    # 启动线程自动打开浏览器
+    auto_open = os.getenv("AUTO_OPEN_BROWSER", "true").lower() in {"1", "true", "yes", "y", "on"}
+    if auto_open:
+        threading.Thread(target=open_browser).start()
     
     uvicorn.run(app, host=host, port=port, reload=False)

@@ -127,12 +127,12 @@ class VideoReader:
             groups = self.group_images()
             for idx, group in enumerate(groups, start=1):
                 if len(group) < self.grid_size[0] * self.grid_size[1]:
-                    logger.warning(f"⚠️ 跳过第 {idx} 组，图片不足 {self.grid_size[0] * self.grid_size[1]} 张")
+                    logger.warning(f"警告: 跳过第 {idx} 组，图片不足 {self.grid_size[0] * self.grid_size[1]} 张")
                     continue
                 out_path = self.concat_images(group, f"grid_{idx}")
                 image_paths.append(out_path)
 
-            logger.info("📤 开始编码图像...")
+            logger.info("开始编码图像...")
             urls = self.encode_images_to_base64(image_paths)
             return urls
         except Exception as e:

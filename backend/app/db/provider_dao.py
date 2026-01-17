@@ -61,6 +61,8 @@ def insert_provider(id: str, name: str, api_key: str, base_url: str, logo: str, 
         return id
     except Exception as e:
         logger.error(f"Failed to insert provider: {e}")
+        db.rollback()
+        raise
     finally:
         db.close()
 

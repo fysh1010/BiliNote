@@ -52,15 +52,12 @@ export const useProviderStore = create<ProviderStore>((set, get) => ({
     const item = await getProviderById(id)
     if (!item) return
 
-    return {
-      id: item.id,
-      name: item.name ? item.name.trim() : item.name,
-      logo: item.logo,
-      apiKey: item.api_key ? item.api_key.trim() : item.api_key,
-      baseUrl: item.base_url ? item.base_url.trim() : item.base_url,
-      type: item.type ? item.type.trim() : item.type,
-      enabled: item.enabled,
+    const convertedItem = {
+      ...item,
+      apiKey: item.api_key,
+      baseUrl: item.base_url
     }
+    return get().sanitizeProvider(convertedItem)
   },
   addNewProvider: async (provider: IProvider) => {
     const sanitized = get().sanitizeProvider(provider)
@@ -76,7 +73,8 @@ export const useProviderStore = create<ProviderStore>((set, get) => ({
       }
       return id
     } catch (error) {
-      console.error('Error fetching provider:', error)
+      console.error('Error adding provider:', error)
+      throw error // 重新抛出错误，让调用方处理
     }
   },
   // 按 id 获取单个 provider
@@ -95,7 +93,8 @@ export const useProviderStore = create<ProviderStore>((set, get) => ({
       }
       return id
     } catch (error) {
-      console.error('Error fetching provider:', error)
+      console.error('Error updating provider:', error)
+      throw error // 重新抛出错误，让调用方处理
     }
   },
   deleteProvider: async (id: string) => {

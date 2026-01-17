@@ -2,10 +2,18 @@ import ProviderCard from '@/components/Form/modelForm/components/providerCard.ts
 import { Button } from '@/components/ui/button.tsx'
 import { useProviderStore } from '@/store/providerStore'
 import { useNavigate } from 'react-router-dom'
+import { useEffect } from 'react'
 
 const Provider = () => {
   const providers = useProviderStore(state => state.provider)
+  const fetchProviderList = useProviderStore(state => state.fetchProviderList)
   const navigate = useNavigate()
+  
+  // 监听 providers 变化，确保列表及时更新
+  useEffect(() => {
+    fetchProviderList()
+  }, [])
+  
   const handleClick = () => {
     navigate(`/settings/model/new`)
   }

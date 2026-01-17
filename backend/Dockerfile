@@ -1,23 +1,19 @@
-FROM python:3.11-slim
-
-
-RUN rm -f /etc/apt/sources.list && \
-    rm -rf /etc/apt/sources.list.d/* && \
-    echo "deb https://mirrors.tuna.tsinghua.edu.cn/debian bookworm main contrib non-free non-free-firmware" > /etc/apt/sources.list && \
-    echo "deb https://mirrors.tuna.tsinghua.edu.cn/debian bookworm-updates main contrib non-free non-free-firmware" >> /etc/apt/sources.list && \
-    echo "deb https://mirrors.tuna.tsinghua.edu.cn/debian-security bookworm-security main contrib non-free non-free-firmware" >> /etc/apt/sources.list && \
-    apt-get update && \
-    apt-get install -y ffmpeg && \
-    rm -rf /var/lib/apt/lists/*
-
-# 确保 PATH 中包含 ffmpeg 路径（可选）
-ENV PATH="/usr/bin:${PATH}"
-
-# 设置 Hugging Face 镜像源环境变量
-ENV HF_ENDPOINT=https://hf-mirror.com
+FROM python:3.9-slim
 
 WORKDIR /app
-COPY ./backend /app
-RUN pip install --no-cache-dir -i https://pypi.tuna.tsinghua.edu.cn/simple -r requirements.txt
 
+# 安装系统依赖
+RUN apt-get update && apt-get install -y     ffmpeg     && rm -rf /var/lib/apt/lists/*
+
+# 复制requirements并安装Python依赖
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+# 复制应用代码
+COPY . .
+
+# 暴露端口
+EXPOSE 8483
+
+# 启动命令
 CMD ["python", "main.py"]

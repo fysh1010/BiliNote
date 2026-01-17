@@ -34,11 +34,20 @@ def _normalize_ffmpeg_path(value: str | None) -> tuple[str | None, str | None]:
 def _get_ffmpeg_candidates() -> list[tuple[str, str | None]]:
     candidates: list[tuple[str, str | None]] = []
 
+    # 1. 优先从应用内部查找 FFmpeg（打包后的环境）
+    if getattr(sys, '_MEIPASS', False):
+        # 打包后的环境，从应用内部查找 FFmpeg
+        internal_ffmpeg_path = str(Path(sys._MEIPASS) / "ffmpeg.exe")
+        if os.path.exists(internal_ffmpeg_path):
+            candidates.append(("internal", internal_ffmpeg_path))
+
+    # 2. 从环境变量查找
     os_env_value = os.environ.get("FFMPEG_BIN_PATH")
     bin_dir, exe_path = _normalize_ffmpeg_path(os_env_value)
     if bin_dir:
         candidates.append(("env", exe_path))
 
+    # 3. 从 .env 文件查找
     dotenv_path = _get_dotenv_path()
     if dotenv_path:
         dotenv_value = dotenv_values(dotenv_path).get("FFMPEG_BIN_PATH")

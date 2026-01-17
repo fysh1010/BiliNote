@@ -7,7 +7,16 @@ from app.utils.env_checker import is_cuda_available, is_torch_installed
 from app.utils.logger import get_logger
 from app.utils.path_helper import get_model_dir
 
-from events import transcription_finished
+# 直接从events模块导入，不使用相对导入
+try:
+    from events import transcription_finished
+except ImportError:
+    # 如果直接导入失败，使用绝对导入
+    import sys
+    from pathlib import Path
+    # 将项目根目录添加到sys.path
+    sys.path.append(str(Path(__file__).resolve().parent.parent.parent))
+    from events import transcription_finished
 from pathlib import Path
 import os
 from tqdm import tqdm
